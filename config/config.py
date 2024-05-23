@@ -30,6 +30,14 @@ class Config:
         return cls._config
 
     @staticmethod
+    def make_list(settings_entry: dict):
+        """Return list of values for a given space separated entry"""
+        output_dict = {}
+        for string_list in settings_entry:
+            output_dict[string_list] = str(settings_entry[string_list]).split(" ")
+        return output_dict
+
+    @staticmethod
     def __read_yaml_config(file_name: str) -> dict:
         """Open YAML parameter file
 

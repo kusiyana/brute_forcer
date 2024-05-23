@@ -3,7 +3,7 @@ connection:
   baudrate: 9600
   stopbits: 1
   databits: 8
-  parity: N
+  parity: O
 brute_force:
   slave_id: 1
   check_address: 1
@@ -13,3 +13,4 @@ brute_force:
   parities: N E O
   address_start: 0
   address_end: 400
+  function: read_holding_registers # or 'read_input_registers'
