@@ -1,0 +1,15 @@
+port: /dev/tty.usbserial-AB0M9JMN
+connection:
+  baudrate: 9600
+  stopbits: 1
+  databits: 8
+  parity: N
+brute_force:
+  slave_id: 1
+  check_address: 1
+  baudrates: 1200 4800 9600 19200 38400 
+  stopbits: 2
+  databits: 8
+  parities: N E O
+  address_start: 0
+  address_end: 400
