@@ -9,12 +9,15 @@ Use these scripts at your own risk! There is a chance that you will break a cruc
 python -m venv venv
 pip install -r requirements.txt
 ```
+
 and then:
 
 ```python find_connection.py```
+
 or:
+
 ```
-find_parameter_addresses.py
+python find_parameter_addresses.py
 ```
 
 ## What to run and when
