@@ -10,7 +10,12 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-and then:
+## and then:
+Edit config/config.yaml to make it have the appropriate information for either connection or brute force address interrogation.
+
+
+## And then:
+In your terminal type:
 
 ```python find_connection.py```
 
@@ -21,8 +26,6 @@ python find_parameter_addresses.py
 ```
 
 ## What to run and when
-Run find_connection.py if you don't know what the connection details are to the device. This script will exhaustively try every combination of parameters until it unlocks the device.
+Run find_connection.py if you don't know what the connection details are to the device. This script will exhaustively try every combination of parameters until it unlocks the device. If connection details are identified a dictionary of the settings will be printed to screen.
 
-Run find_parameter_addresses.py if you don't know which addresses need to be modified for slave_id, baudrate, parity and stopbits.
-Usage:
-Thi
+Run find_parameter_addresses.py if you don't know which addresses need to be modified for slave_id, baudrate, parity and stopbits. At the end of the script 
