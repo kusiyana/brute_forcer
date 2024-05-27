@@ -1,16 +1,29 @@
 port: /dev/tty.usbserial-AB0M9JMN
+log: ./output.log
 connection:
-  baudrate: 9600
+  baudrate: 9200
   stopbits: 1
   databits: 8
-  parity: O
-brute_force:
-  slave_id: 1
+  parity: N
+
+find_connection:
+  slaves: 1
   check_address: 1
-  baudrates: 1200 4800 9600 19200 38400 
+  baudrates: 1200 2400 4800 9600 19200 38400 57600 76800 115200 576000
   stopbits: 2
   databits: 8
   parities: N E O
-  address_start: 0
-  address_end: 400
-  function: read_holding_registers # or 'read_input_registers'
+  address_start: 90
+  address_end: 97
+
+find_parameters:
+  slave_id: 1
+  check_address: 1
+  baudrates: 1200 2400 4800 9600 19200 38400 57600 76800 115200 576000
+  parities: N E O
+  stopbits: 1 2
+  databits: 7 8
+  address_start: 90
+  address_end: 97
+  delay_time_seconds: 0 
+  

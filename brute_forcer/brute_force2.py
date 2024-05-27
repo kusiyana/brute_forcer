@@ -1,11 +1,34 @@
 import sys
 
 from pymodbus.client import ModbusSerialClient
-from serial import Serial
-from config.config import settings
+from config.config import settings, Config
+import logging
+
+
+log = logging.getLogger("logger")
+log.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter("%(message)s")
+
+fh = logging.FileHandler(settings["log"], mode="w", encoding="utf-8")
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(formatter)
+log.addHandler(fh)
+
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+ch.setFormatter(formatter)
+log.addHandler(ch)
 
 
 class Bruteforce:
+    parameter_scope = {
+        "baudrate": [1200, 2400, 4800, 9600, 19200, 38400],
+        "parity": ["N", "E", "O"],
+        "stopbits": [1, 2],
+    }
+    parities = ["N", "E", "O"]
+    stopbits = ["1,2"]
 
     @staticmethod
     def return_connection():
@@ -30,21 +53,12 @@ class Bruteforce:
     @staticmethod
     def find_connection_params() -> dict:
         """Brute force the basic connection parameters"""
-        slaves = str(settings["brute_force"]["slave_id"]).split(" ")
-        check_address = str(settings["brute_force"]["check_address"])
-        baudrates = str(settings["brute_force"]["baudrates"]).split(" ")
-        stopbits = str(settings["brute_force"]["stopbits"]).split(" ")
-        databits = str(settings["brute_force"]["databits"]).split(" ")
-        parities = str(settings["brute_force"]["parities"]).split(" ")
-        print(baudrates)
-        print(stopbits)
-        print(databits)
-        print(databits)
-        for slave in slaves:
-            for baud in baudrates:
-                for stopbit in stopbits:
-                    for databit in databits:
-                        for parity in parities:
+        brute_force_settings = Config.make_list(settings["find_connection"])
+        for slave in brute_force_settings["slaves"]:
+            for baud in brute_force_settings["baudrates"]:
+                for stopbit in brute_force_settings["stopbits"]:
+                    for databit in brute_force_settings["databits"]:
+                        for parity in brute_force_settings["parities"]:
                             try:
                                 master = ModbusSerialClient(
                                     port=settings["port"],
@@ -54,17 +68,18 @@ class Bruteforce:
                                     parity=str(parity),
                                 )
                                 if master.connect():
-                                    print("asdfasdf")
-                                    print(
-                                        f"trying: {baud}, {parity}, {stopbit}, {databit} slave: {slave}"
+                                    log.info(
+                                        f" - Trying: {baud}, {parity}, {stopbit}, {databit} slave: {slave}"
+                                    )
+
+                                    result = master.read_holding_registers(
+                                        int(brute_force_settings["check_address"][0]),
+                                        1,
+                                        slave=int(slave),
                                     )
                                     try:
-                                        print(check_address, slave)
-                                        result = master.read_holding_registers(
-                                            int(check_address), 1, slave=int(slave)
-                                        )
-                                        print(result)
-                                        result.registers
+                                        assert result.registers
+                                        log.info(" -- Hurrah, found it!")
                                         return {
                                             "port": settings["port"],
                                             "baudrate": int(baud),
@@ -72,184 +87,169 @@ class Bruteforce:
                                             "stopbits": int(stopbit),
                                             "databits": int(databit),
                                         }
-                                    except:
-                                        try:
-                                            result = master.read_input_registers(
-                                                check_address, 1, slave=slave
-                                            )
-                                            print(result)
-                                            result.registers
-                                            return {
-                                                "port": settings["port"],
-                                                "baudrate": int(baud),
-                                                "parity": str(parity),
-                                                "stopbits": int(stopbit),
-                                                "databits": int(databit),
-                                            }
-                                        except:
-                                            pass
+                                    except AttributeError:
+                                        log.info(" -- meh, failed")
+                                        pass
                                     finally:
                                         master.close()
                             except KeyboardInterrupt:
-                                print("Bye")
+                                log.info("Bye")
                                 sys.exit()
-                            except Exception as exception:
-                                # print(exception)
+                            except Exception as e:
+                                log.error(e)
                                 pass
 
     @classmethod
-    def find_parameter_addresses(cls, connection_details: dict) -> int:
-        master = ModbusSerialClient(**connection_details)
-        connection_parameters = {}
+    def find_parameter_addresses(cls) -> int:
+        """Locate which addressses contain settings data for slave_id
+        baudrate, parity and stopbits"""
+        output_parameters = {}
         # 2 fix parameter with slave_id, baud, parity, stopbits
-        address_start = settings["brute_force"]["address_start"]
-        address_end = settings["brute_force"]["address_end"]
+        address_start = settings["find_parameters"]["address_start"]
+        address_end = settings["find_parameters"]["address_end"]
         for address in range(address_start, address_end):
-            print(f"Checking address {address}")
-            try:  # Get original value from address N
-                result = master.read_holding_registers(
-                    address, 1, slave=settings["brute_force"]["slave_id"]
-                )
-                print(result)
-                original_value = result.registers[0]
-                new_value = int(original_value) + 1
-            except Exception as e:
-                print(e)
-                print("Could not read address, skipping...")
+            log.info(f"Checking address {address}")
+            original_value = cls.__get_original_value(address)
+            if original_value is None:
+                continue
+            new_value = original_value + 1
+            # break address N
+            cls.__break_address_n(address, new_value)
+            broken = cls.__test_breakage(address)
+
+            if not broken:
+                log.info(" -- Not broken")
+                cls.__restore_original_value(address, original_value)
+                continue
+            # is broken
+            slave_address = cls.__test_slave_address(address, original_value, new_value)
+            if slave_address:
+                output_parameters = output_parameters | slave_address
+                log.info(" -- Hurrah, found slave address at {slave_address}")
                 continue
 
-            # break address N
-
-            try:
-                print(f"trying to break address {address}")
-                print(
-                    master.write_register(
-                        int(address),
-                        int(new_value),
-                        slave=int(settings["brute_force"]["slave_id"]),
-                    )
+            for parameter in ["baudrate", "parity", "stopbits"]:
+                parameter_found = cls.check_parameter(
+                    parameter, address, original_value
                 )
+                if parameter_found:
+                    output_parameters = output_parameters | parameter_found
+                    break
+        return output_parameters
+
+    @classmethod
+    def check_parameter(cls, parameter: str, address: int, original_value: int) -> dict:
+
+        connection_details_scratch = cls.return_connection().copy()
+        for var in settings['find_parameters'][parameter]:
+            log.info(f"-- Checking value for parameter {parameter} with {var}")
+            connection_details_scratch[parameter] = var
+            master = ModbusSerialClient(**connection_details_scratch)
+            result = master.read_holding_registers(
+                address, 1, slave=settings["find_parameters"]["slave_id"]
+            )
+            master.close()
+            if cls.__has_registers(result):
+                cls.__restore_original_value(
+                    address, original_value, connection_details_scratch
+                )
+                master.close()
+                log.info(" -- -- Found it!")
+                return {parameter: address}
+        return {}
+
+    @staticmethod
+    def __has_registers(result):
+        if hasattr(result, "registers"):
+            return True
+        return False
+
+    @classmethod
+    def __get_original_value(cls, address):
+        """Get the original value contained at address X"""
+        try:  # Get original value from address N
+            master = cls.connect()
+            result = master.read_holding_registers(
+                address, 1, slave=settings["find_parameters"]["slave_id"]
+            )
+            original_value = result.registers[0]
+            master.close()
+            return original_value
+        except Exception as e:
+            log.info(" -- Could not read address")
+            master.close()
+            return None
+
+    @classmethod
+    def __break_address_n(cls, address, new_value):
+        master = cls.connect()
+        try:
+            log.info(
+                f"Trying to break connection with {new_value} at address {address}"
+            )
+            master.write_register(
+                int(address),
+                int(new_value),
+                slave=int(settings["find_parameters"]["slave_id"]),
+            )
+            master.close()
+        except Exception as e:
+            log.error(e)
+            master.close()
+            pass
+
+    @classmethod
+    def __test_breakage(cls, address):
+        master = cls.connect()
+        try:
+            log.info(" -- Testing if it's broken")
+            result = master.read_holding_registers(
+                address, 1, slave=settings["find_parameters"]["slave_id"]
+            )
+            assert result.registers
+            master.close()
+            return False
+        except AttributeError:
+            log.info(f"-- Eished, broken address {address}, trying to fix it...")
+            master.close()
+            return True
+
+    @classmethod
+    def __restore_original_value(
+        cls, address, original_value, connection_details: dict = None
+    ):
+        if connection_details:
+            master = ModbusSerialClient(**connection_details)
+            master.close()
+        else:
+            master = cls.connect()
+        try:
+            master.write_register(
+                address, original_value, slave=settings["find_parameters"]["slave_id"]
+            )
+        except Exception as e:
+            log.error(f"oops {e}")
+            pass
+        finally:
+            master.close()
+
+        master.close()
+
+    @classmethod
+    def __test_slave_address(cls, address, original_value, new_value):
+        master = cls.connect()
+        master.write_register(address, original_value, slave=new_value)
+        result = master.read_holding_registers(address, 1, slave=original_value)
+        master.close()
+        if cls.__has_registers(result):
+            cls.__restore_original_value(address, original_value)
+            log.info(f" -- Reading address {address} slave {original_value}")
+            result = master.read_holding_registers(address, 1, slave=original_value)
+            master.close()
+            try:
+                assert result.registers
+                return {"slave_id": address}
             except:
                 pass
-            # Does it break?
-            try:
-                print("testing if it is broken")
-                master.close()
-                master = cls.connect()
-                result = master.read_holding_registers(
-                    address, 1, slave=settings["brute_force"]["slave_id"]
-                )
-                print(result.registers)
-                print(" Not broken")
-                # No it doesn't break, restore value
-                master.write_register(
-                    address, original_value, slave=settings["brute_force"]["slave_id"]
-                )
-                continue
-            except Exception:
-                print(f"-- Eished, broken address {address}, trying to fix it...")
-
-                # It is broken
-
-                # Check slave ID
-                master.write_register(address, original_value, slave=new_value)
-                result = master.read_holding_registers(address, 1, slave=original_value)
-                if hasattr(result, "registers"):
-                    print(f"Located slave ID address {address}")
-                    connection_parameters["slave_address"] = address
-
-                    print(f"reading address {address} slave {original_value}")
-                    result = master.read_holding_registers(
-                        address, 1, slave=original_value
-                    )
-                    continue
-
-                # check baudrates
-
-            baudrate_result = False
-            for baudrate in str(settings["brute_force"]["baudrates"]).split(" "):
-                print(f"checking baudrate {baudrate}")
-                master.close()
-                master = ModbusSerialClient(
-                    port=settings["port"],
-                    baudrate=int(baudrate),
-                    stopbits=connection_details["stopbits"],
-                    databits=connection_details["databits"],
-                    parity=connection_details["parity"],
-                )
-                result = master.read_holding_registers(
-                    address, 1, slave=settings["brute_force"]["slave_id"]
-                )
-                if hasattr(result, "registers"):
-                    baudrate_result = True
-                    print(
-                        f'restoring original baudrate value {original_value} ==> {connection_details["baudrate"]}'
-                    )
-                    connection_parameters["baudrate"] = address
-                    master.write_register(
-                        address,
-                        original_value,
-                        slave=settings["brute_force"]["slave_id"],
-                    )
-                    master.close()
-                    master = cls.connect()
-                    break
-            if baudrate_result:
-                continue
-
-            # check parities
-            parities = ["N", "E", "O"]
-            parity_result = False
-            for parity in parities:
-                print(f"checking parity {parity}")
-                master.close()
-                master = ModbusSerialClient(
-                    port=settings["port"],
-                    baudrate=connection_details["baudrate"],
-                    stopbits=connection_details["stopbits"],
-                    databits=connection_details["databits"],
-                    parity=parity,
-                )
-                result = master.read_holding_registers(
-                    address, 1, slave=settings["brute_force"]["slave_id"]
-                )
-                if hasattr(result, "registers"):
-                    parity_result = True
-                    connection_parameters["parity"] = address
-                    master.write_register(
-                        address,
-                        original_value,
-                        slave=settings["brute_force"]["slave_id"],
-                    )
-                    master.close()
-                    master = cls.connect()
-                    break
-            if parity_result:
-                continue
-
-            # check stopbits
-            stopbits = [1, 2]
-            for stopbit in stopbits:
-                print(f"checking stopbits {stopbit}")
-                master = ModbusSerialClient(
-                    port=settings["port"],
-                    baudrate=connection_details["baudrate"],
-                    stopbits=stopbit,
-                    databits=connection_details["databits"],
-                    parity=connection_details["parity"],
-                )
-                result = master.read_holding_registers(
-                    address, 1, slave=settings["brute_force"]["slave_id"]
-                )
-                if hasattr(result, "registers"):
-                    connection_parameters["stopbits"] = address
-                    master.write_register(
-                        address,
-                        original_value,
-                        slave=settings["brute_force"]["slave_id"],
-                    )
-                    master.close()
-                    master = cls.connect()
-                    break
-        print(connection_parameters)
-        return connection_parameters
+        master.close()
+        return {}
