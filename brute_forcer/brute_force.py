@@ -121,14 +121,20 @@ class Bruteforce:
                 output_parameters = output_parameters | slave_address
                 log.info(f" -- Hurrah, found slave address at {slave_address}")
                 continue
-
-            for parameter in ["baudrate", "parity", "stopbits"]:
+            
+            parameter_found = None
+            
+            cls.__break_address_n(address, new_value)
+            for parameter in ["baudrate", "parity", "stopbits"]:                
                 parameter_found = cls.check_parameter(
                     parameter, address, original_value
                 )
                 if parameter_found:
                     output_parameters = output_parameters | parameter_found
                     break
+            
+            if parameter_found:
+                continue
         return output_parameters
 
     @classmethod
@@ -138,24 +144,23 @@ class Bruteforce:
         connection_details_scratch = cls.return_connection().copy()
         for var in settings["find_parameters"][parameter].split(" "):
             sleep(float(settings["find_parameters"]["delay_time_seconds"]))
-            log.info(f"-- Checking value for parameter {parameter} with {var}")
+            log.info(f"  -- -- Checking value for parameter {parameter} with {var} for address {address}")
             try:
                 var = int(var)
-            except Exception as e:
-                print(e)
+            except Exception as e:                
                 pass
-            connection_details_scratch[parameter] = var
+            connection_details_scratch[parameter] = var            
             master = ModbusSerialClient(**connection_details_scratch)
             result = master.read_holding_registers(
                 address, 1, slave=settings["find_parameters"]["slave_id"]
             )
             master.close()
-            if cls.__has_registers(result):
+            if cls.__has_registers(result):                
                 cls.__restore_original_value(
                     address, original_value, connection_details_scratch
                 )
-                master.close()
-                log.info(" -- -- Found it!")
+                master.close()                
+                log.info(f" -- -- Found it! --> {parameter}: ")
                 return {parameter: address}
         return {}
 
@@ -188,13 +193,13 @@ class Bruteforce:
         master = cls.connect()
         try:
             log.info(
-                f" - Trying to break connection with {new_value} at address {address}"
+                f" - Trying to break connection with new value '{new_value}' at address '{address}'"
             )
-            master.write_register(
+            log.info(master.write_register(
                 int(address),
                 int(new_value),
                 slave=int(settings["find_parameters"]["slave_id"]),
-            )
+            ))
             master.close()
         except Exception as e:
             log.error(e)
@@ -210,8 +215,8 @@ class Bruteforce:
             result = master.read_holding_registers(
                 address, 1, slave=settings["find_parameters"]["slave_id"]
             )
-            assert result.registers
             master.close()
+            assert result.registers
             return False
         except AttributeError:
             log.info(f"  -- Eished, broken address {address}, trying to fix it...")
@@ -221,9 +226,10 @@ class Bruteforce:
     @classmethod
     def __restore_original_value(
         cls, address, original_value, connection_details: dict = None
-    ):
+    ) -> None:
         """If the address hasn't broken after a new value is made, restore the original
         value"""
+        log.info(f'restoring original value {original_value} at {address}')
         if connection_details:
             master = ModbusSerialClient(**connection_details)
             master.close()
@@ -240,7 +246,23 @@ class Bruteforce:
         finally:
             master.close()
 
-        master.close()
+    @classmethod
+    def __restore_original_slave_value(cls, old_slave_id, address, original_value):        
+        """If the address hasn't broken after a new value is made, restore the original
+        value"""
+        master = cls.connect()
+        sleep(float(settings["find_parameters"]["delay_time_seconds"]))
+        try:
+            master.write_register(
+                address, original_value, slave=old_slave_id
+            )
+        except Exception as e:
+            log.error(f"oops {e}")
+            pass
+        finally:
+            master.close()
+
+        return
 
     @classmethod
     def __test_slave_address(cls, address, original_value, new_value):
@@ -250,7 +272,7 @@ class Bruteforce:
         result = master.read_holding_registers(address, 1, slave=original_value)
         master.close()
         if cls.__has_registers(result):
-            cls.__restore_original_value(address, original_value)
+            # cls.__restore_original_slave_value(original_value, address, new_value)
             log.info(f"  -- Reading address {address} slave {original_value}")
             sleep(float(settings["find_parameters"]["delay_time_seconds"]))
             result = master.read_holding_registers(address, 1, slave=original_value)

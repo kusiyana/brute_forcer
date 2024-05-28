@@ -2,7 +2,7 @@ port: /dev/tty.usbserial-AB0M9JMN
 log: ./output.log
 connection:
   baudrate: 9600
-  stopbits: 1
+  stopbits: 2
   databits: 8
   parity: N
 
@@ -10,11 +10,9 @@ find_connection:
   slaves: 1
   check_address: 1
   baudrate: 1200 2400 4800 9600 19200 38400 57600 76800 115200 576000
-  stopbits: 2
+  stopbits: 1
   databits: 8
   parity: N E O
-  address_start: 90
-  address_end: 97
 
 find_parameters:
   slave_id: 1
@@ -24,6 +22,6 @@ find_parameters:
   stopbits: 1 2
   databits: 7 8
   address_start: 90
-  address_end: 97
+  address_end: 100
   delay_time_seconds: 0 
   
