@@ -136,8 +136,8 @@ class Bruteforce:
         """Check if parameter (baudrate, parity, stopbits) is still working after a change
         has been made to a particular address"""
         connection_details_scratch = cls.return_connection().copy()
-        for var in settings['find_parameters'][parameter].split(' '):
-            sleep(float(settings['find_parameters']['delay_time_seconds']))
+        for var in settings["find_parameters"][parameter].split(" "):
+            sleep(float(settings["find_parameters"]["delay_time_seconds"]))
             log.info(f"-- Checking value for parameter {parameter} with {var}")
             try:
                 var = int(var)
@@ -149,7 +149,7 @@ class Bruteforce:
             result = master.read_holding_registers(
                 address, 1, slave=settings["find_parameters"]["slave_id"]
             )
-            master.close()            
+            master.close()
             if cls.__has_registers(result):
                 cls.__restore_original_value(
                     address, original_value, connection_details_scratch
@@ -169,7 +169,7 @@ class Bruteforce:
     def __get_original_value(cls, address):
         """Get the original value contained at address X"""
         try:  # Get original value from address N
-            sleep(float(settings['find_parameters']['delay_time_seconds']))
+            sleep(float(settings["find_parameters"]["delay_time_seconds"]))
             master = cls.connect()
             result = master.read_holding_registers(
                 address, 1, slave=settings["find_parameters"]["slave_id"]
@@ -185,8 +185,8 @@ class Bruteforce:
     @classmethod
     def __break_address_n(cls, address, new_value):
         """Change a value at address X to see if that stops the device from responding"""
-        sleep(float(settings['find_parameters']['delay_time_seconds']))
-        master = cls.connect()        
+        sleep(float(settings["find_parameters"]["delay_time_seconds"]))
+        master = cls.connect()
         try:
             log.info(
                 f" - Trying to break connection with {new_value} at address {address}"
@@ -196,7 +196,7 @@ class Bruteforce:
                 int(new_value),
                 slave=int(settings["find_parameters"]["slave_id"]),
             )
-            master.close()            
+            master.close()
         except Exception as e:
             log.error(e)
             master.close()
@@ -205,7 +205,7 @@ class Bruteforce:
     @classmethod
     def __test_breakage(cls, address):
         master = cls.connect()
-        sleep(float(settings['find_parameters']['delay_time_seconds']))
+        sleep(float(settings["find_parameters"]["delay_time_seconds"]))
         try:
             log.info("  -- Testing if it's broken")
             result = master.read_holding_registers(
@@ -230,7 +230,7 @@ class Bruteforce:
             master.close()
         else:
             master = cls.connect()
-        sleep(float(settings['find_parameters']['delay_time_seconds']))
+        sleep(float(settings["find_parameters"]["delay_time_seconds"]))
         try:
             master.write_register(
                 address, original_value, slave=settings["find_parameters"]["slave_id"]
@@ -245,7 +245,7 @@ class Bruteforce:
 
     @classmethod
     def __test_slave_address(cls, address, original_value, new_value):
-        sleep(float(settings['find_parameters']['delay_time_seconds']))
+        sleep(float(settings["find_parameters"]["delay_time_seconds"]))
         master = cls.connect()
         master.write_register(address, original_value, slave=new_value)
         result = master.read_holding_registers(address, 1, slave=original_value)
@@ -253,7 +253,7 @@ class Bruteforce:
         if cls.__has_registers(result):
             cls.__restore_original_value(address, original_value)
             log.info(f"  -- Reading address {address} slave {original_value}")
-            sleep(float(settings['find_parameters']['delay_time_seconds']))
+            sleep(float(settings["find_parameters"]["delay_time_seconds"]))
             result = master.read_holding_registers(address, 1, slave=original_value)
             master.close()
             try:
