@@ -168,19 +168,18 @@ class Bruteforce:
     @classmethod
     def __get_original_value(cls, address):
         """Get the original value contained at address X"""
+        sleep(float(settings["find_parameters"]["delay_time_seconds"]))
+        master = cls.connect()
         try:  # Get original value from address N
-            sleep(float(settings["find_parameters"]["delay_time_seconds"]))
-            master = cls.connect()
             result = master.read_holding_registers(
                 address, 1, slave=settings["find_parameters"]["slave_id"]
             )
             original_value = result.registers[0]
-            master.close()
-            return original_value
-        except Exception as e:
-            log.info(" -- Could not read address {e}")
-            master.close()
-            return None
+        except AttributeError:
+            log.info(f" -- Could not read address")
+            original_value = None
+        master.close()
+        return original_value
 
     @classmethod
     def __break_address_n(cls, address, new_value):
