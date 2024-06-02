@@ -61,37 +61,58 @@ class Bruteforce:
                                     bytesize=int(databit),
                                     parity=str(parity),
                                 )
-                                if master.connect():
-                                    log.info(
-                                        f" - Trying: {baud}, {parity}, {stopbit}, {databit} slave: {slave}"
-                                    )
-
-                                    result = master.read_holding_registers(
-                                        int(brute_force_settings["check_address"][0]),
-                                        1,
-                                        slave=int(slave),
-                                    )
-                                    try:
-                                        assert result.registers
-                                        log.info(" -- Hurrah, found it!")
-                                        return {
-                                            "port": settings["port"],
-                                            "baudrate": int(baud),
-                                            "parity": parity,
-                                            "stopbits": int(stopbit),
-                                            "databits": int(databit),
-                                        }
-                                    except AttributeError:
-                                        log.info(" -- meh, failed")
-                                        pass
-                                    finally:
-                                        master.close()
-                            except KeyboardInterrupt:
-                                log.info("Bye")
-                                sys.exit()
+                                if not master.connect():
+                                    sys.exit()
                             except Exception as e:
-                                log.error(e)
+                                log.info(e)
+                                sys.exit()
+
+                            log.info(
+                                f" - Trying: {baud}, {parity}, {stopbit}, {databit} slave: {slave}"
+                            )
+
+                            result = master.read_holding_registers(
+                                int(brute_force_settings["check_address"][0]),
+                                1,
+                                slave=int(slave),
+                            )
+                            try:
+                                assert result.registers
+                                log.info(" -- Hurrah, found it with holding registers!")
+                                return {
+                                    "port": settings["port"],
+                                    "baudrate": int(baud),
+                                    "parity": parity,
+                                    "stopbits": int(stopbit),
+                                    "databits": int(databit),
+                                }
+                            except (AssertionError, AttributeError):
+                                log.info(" -- meh, failed with holding registers")
                                 pass
+                            print("reading input reg")
+                            sleep(settings["find_connection"]["delay_time_seconds"])
+                            result = master.read_input_registers(
+                                int(brute_force_settings["check_address"][0]),
+                                1,
+                                slave=int(slave),
+                            )
+                            master.close()
+                            try:
+                                assert result.registers
+                                log.info(" -- Hurrah, found it with input registers!")
+                                master.close()
+                                return {
+                                    "port": settings["port"],
+                                    "baudrate": int(baud),
+                                    "parity": parity,
+                                    "stopbits": int(stopbit),
+                                    "databits": int(databit),
+                                }
+                            except Exception as e:
+                                print(e)
+                                log.info(" -- meh, failed with input registers")
+                            finally:
+                                master.close()
 
     @classmethod
     def find_parameter_addresses(cls) -> int:
@@ -116,23 +137,24 @@ class Bruteforce:
                 cls.__restore_original_value(address, original_value)
                 continue
             # is broken
+            log.info(f"  -- Eished, broken address {address}, trying to fix it...")
             slave_address = cls.__test_slave_address(address, original_value, new_value)
             if slave_address:
                 output_parameters = output_parameters | slave_address
                 log.info(f" -- Hurrah, found slave address at {slave_address}")
                 continue
-            
+
             parameter_found = None
-            
+
             cls.__break_address_n(address, new_value)
-            for parameter in ["baudrate", "parity", "stopbits"]:                
+            for parameter in ["baudrate", "parity", "stopbits"]:
                 parameter_found = cls.check_parameter(
                     parameter, address, original_value
                 )
                 if parameter_found:
                     output_parameters = output_parameters | parameter_found
                     break
-            
+
             if parameter_found:
                 continue
         return output_parameters
@@ -144,23 +166,25 @@ class Bruteforce:
         connection_details_scratch = cls.return_connection().copy()
         for var in settings["find_parameters"][parameter].split(" "):
             sleep(float(settings["find_parameters"]["delay_time_seconds"]))
-            log.info(f"  -- -- Checking value for parameter {parameter} with {var} for address {address}")
+            log.info(
+                f"  -- -- Checking value for parameter {parameter} with {var} for address {address}"
+            )
             try:
                 var = int(var)
-            except Exception as e:                
+            except Exception as e:
                 pass
-            connection_details_scratch[parameter] = var            
+            connection_details_scratch[parameter] = var
             master = ModbusSerialClient(**connection_details_scratch)
             result = master.read_holding_registers(
                 address, 1, slave=settings["find_parameters"]["slave_id"]
             )
             master.close()
-            if cls.__has_registers(result):                
+            if cls.__has_registers(result):
                 cls.__restore_original_value(
                     address, original_value, connection_details_scratch
                 )
-                master.close()                
-                log.info(f" -- -- Found it! --> {parameter}: ")
+                master.close()
+                log.info(f" -- -- Found it! --> {parameter}: {address}")
                 return {parameter: address}
         return {}
 
@@ -195,11 +219,13 @@ class Bruteforce:
             log.info(
                 f" - Trying to break connection with new value '{new_value}' at address '{address}'"
             )
-            log.info(master.write_register(
-                int(address),
-                int(new_value),
-                slave=int(settings["find_parameters"]["slave_id"]),
-            ))
+            log.info(
+                master.write_register(
+                    int(address),
+                    int(new_value),
+                    slave=int(settings["find_parameters"]["slave_id"]),
+                )
+            )
             master.close()
         except Exception as e:
             log.error(e)
@@ -219,7 +245,6 @@ class Bruteforce:
             assert result.registers
             return False
         except AttributeError:
-            log.info(f"  -- Eished, broken address {address}, trying to fix it...")
             master.close()
             return True
 
@@ -229,7 +254,7 @@ class Bruteforce:
     ) -> None:
         """If the address hasn't broken after a new value is made, restore the original
         value"""
-        log.info(f'restoring original value {original_value} at {address}')
+        log.info(f"restoring original value {original_value} at {address}")
         if connection_details:
             master = ModbusSerialClient(**connection_details)
             master.close()
@@ -247,15 +272,13 @@ class Bruteforce:
             master.close()
 
     @classmethod
-    def __restore_original_slave_value(cls, old_slave_id, address, original_value):        
+    def __restore_original_slave_value(cls, new_slave_id, address, original_value):
         """If the address hasn't broken after a new value is made, restore the original
         value"""
         master = cls.connect()
         sleep(float(settings["find_parameters"]["delay_time_seconds"]))
         try:
-            master.write_register(
-                address, original_value, slave=old_slave_id
-            )
+            master.write_register(address, original_value, slave=new_slave_id)
         except Exception as e:
             log.error(f"oops {e}")
             pass
@@ -268,17 +291,18 @@ class Bruteforce:
     def __test_slave_address(cls, address, original_value, new_value):
         sleep(float(settings["find_parameters"]["delay_time_seconds"]))
         master = cls.connect()
-        master.write_register(address, original_value, slave=new_value)
-        result = master.read_holding_registers(address, 1, slave=original_value)
+        result = master.read_holding_registers(address, 1, slave=new_value)
         master.close()
         if cls.__has_registers(result):
-            # cls.__restore_original_slave_value(original_value, address, new_value)
-            log.info(f"  -- Reading address {address} slave {original_value}")
+            cls.__restore_original_slave_value(new_value, address, original_value)
+            log.info(f"  -- Reading address {address} from slave {original_value}")
             sleep(float(settings["find_parameters"]["delay_time_seconds"]))
-            result = master.read_holding_registers(address, 1, slave=original_value)
+            result_original_slave = master.read_holding_registers(
+                address, 1, slave=original_value
+            )
             master.close()
             try:
-                assert result.registers
+                assert result_original_slave.registers
                 return {"slave_id": address}
             except:
                 pass
